@@ -29,9 +29,20 @@ load_dotenv(_ENV_PATH)
 
 # -----------------------------------------------------------------------------
 # 로깅 (ref.txt: ERROR/WARNING만, HTTP 로그 억제)
+# Streamlit Cloud 등에서는 프로젝트 루트에 쓰기 불가 → /tmp 등으로 폴백
 # -----------------------------------------------------------------------------
-_LOG_DIR = _ROOT / "logs"
-_LOG_DIR.mkdir(exist_ok=True)
+def _resolve_log_dir() -> Path:
+    preferred = _ROOT / "logs"
+    try:
+        preferred.mkdir(exist_ok=True)
+        return preferred
+    except (PermissionError, OSError):
+        fallback = Path(tempfile.gettempdir()) / "ai-education-chatbot-logs"
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback
+
+
+_LOG_DIR = _resolve_log_dir()
 _LOG_FILE = _LOG_DIR / f"chatbot_{datetime.now().strftime('%Y%m%d')}.log"
 
 for _name in ("httpx", "httpcore", "urllib3", "openai", "langchain", "langchain_openai"):
@@ -40,10 +51,13 @@ for _name in ("httpx", "httpcore", "urllib3", "openai", "langchain", "langchain_
 _root_logger = logging.getLogger()
 _root_logger.setLevel(logging.WARNING)
 if not any(isinstance(h, logging.FileHandler) and getattr(h, "baseFilename", "") == str(_LOG_FILE) for h in _root_logger.handlers):
-    _fh = logging.FileHandler(_LOG_FILE, encoding="utf-8")
-    _fh.setLevel(logging.WARNING)
-    _fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-    _root_logger.addHandler(_fh)
+    try:
+        _fh = logging.FileHandler(_LOG_FILE, encoding="utf-8")
+        _fh.setLevel(logging.WARNING)
+        _fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+        _root_logger.addHandler(_fh)
+    except (PermissionError, OSError):
+        pass
 
 
 def _log_exc(msg: str, exc: BaseException) -> None:
